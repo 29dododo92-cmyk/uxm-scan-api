@@ -49,7 +49,6 @@ function patternizePath(pathname) {
 function bucketLabelFromPath(pathname) {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length === 0) return "Root";
-  // simple: first segment as top group, capitalize
   const first = parts[0];
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
@@ -58,7 +57,7 @@ function makeNode(label) {
   return { label, children: [], count: 0, exampleUrl: null, pattern: null };
 }
 
-export function buildFullStructure(urls) {
+function buildFullStructure(urls) {
   const root = { label: "Site", children: [] };
 
   // Map: bucket -> pattern -> node
@@ -69,6 +68,7 @@ export function buildFullStructure(urls) {
     if (!norm) continue;
 
     const u = new URL(norm);
+
     if (isProbablyNonHtml(u.pathname)) continue;
 
     const bucket = bucketLabelFromPath(u.pathname);
@@ -92,11 +92,8 @@ export function buildFullStructure(urls) {
   for (const [bucket, patterns] of bucketMap.entries()) {
     const bucketNode = makeNode(bucket);
 
-    // children sorted: most frequent first
     const children = Array.from(patterns.values()).sort((a, b) => b.count - a.count);
     bucketNode.children = children;
-
-    // bucket count = sum of children
     bucketNode.count = children.reduce((sum, c) => sum + c.count, 0);
 
     root.children.push(bucketNode);
@@ -107,3 +104,5 @@ export function buildFullStructure(urls) {
 
   return root;
 }
+
+module.exports = { buildFullStructure };
