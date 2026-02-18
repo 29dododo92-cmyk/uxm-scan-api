@@ -1,4 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
+const { XMLParser } = require("fast-xml-parser");
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -10,20 +10,28 @@ function asArray(x) {
   return Array.isArray(x) ? x : [x];
 }
 
-export function parseSitemapXml(xmlText) {
+function parseSitemapXml(xmlText) {
   const data = parser.parse(xmlText);
 
   // sitemapindex → contains <sitemap><loc>
-  if (data.sitemapindex) {
-    const sitemaps = asArray(data.sitemapindex.sitemap).map((s) => s.loc).filter(Boolean);
+  if (data && data.sitemapindex) {
+    const sitemaps = asArray(data.sitemapindex.sitemap)
+      .map((s) => s.loc)
+      .filter(Boolean);
+
     return { type: "index", sitemaps };
   }
 
   // urlset → contains <url><loc>
-  if (data.urlset) {
-    const urls = asArray(data.urlset.url).map((u) => u.loc).filter(Boolean);
+  if (data && data.urlset) {
+    const urls = asArray(data.urlset.url)
+      .map((u) => u.loc)
+      .filter(Boolean);
+
     return { type: "urlset", urls };
   }
 
   throw new Error("Unknown sitemap XML format");
 }
+
+module.exports = { parseSitemapXml };
