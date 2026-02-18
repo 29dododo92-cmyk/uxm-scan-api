@@ -41,13 +41,14 @@ app.post("/scan", async (req, res) => {
 
     await page.goto(normalized, { waitUntil: "networkidle", timeout: 45000 });
 
-    const buffer = await page.screenshot({ fullPage: true, type: "png" });
+    // JPEG is smaller than PNG for API responses
+    const buffer = await page.screenshot({ fullPage: true, type: "jpeg", quality: 60 });
     const base64 = buffer.toString("base64");
 
     return res.json({
       success: true,
-      mime: "image/png",
-      dataUrl: `data:image/png;base64,${base64}`
+      mime: "image/jpeg",
+      dataUrl: `data:image/jpeg;base64,${base64}`
     });
   } catch (e) {
     return res.status(500).json({
@@ -60,11 +61,13 @@ app.post("/scan", async (req, res) => {
 });
 
 /* =========================================
-   NEW: Domain → Sitemap → Structure + Captured list
+   Domain → Sitemap → Structure + Captured list + AUTO screenshots
    - default returns structureSummary (small)
    - fullStructure only if ?full=1
 ========================================= */
 app.post("/api/scan/domain", async (req, res) => {
+  let browser;
+
   try {
     const { domain } = req.body || {};
     const includeFull = req.query.full === "1";
@@ -152,12 +155,47 @@ app.post("/api/scan/domain", async (req, res) => {
       maxPatternsPerBucket: 5
     });
 
+    // AUTO screenshots for capturedPages (MVP)
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-dev-shm-usage"]
+    });
+
+    for (let i = 0; i < capturedPages.length; i++) {
+      const item = capturedPages[i];
+
+      const page = await browser.newPage({
+        viewport: { width: 1440, height: 900 }
+      });
+
+      try {
+        await page.goto(item.url, { waitUntil: "networkidle", timeout: 45000 });
+
+        // JPEG is much smaller than PNG
+        const buffer = await page.screenshot({
+          fullPage: true,
+          type: "jpeg",
+          quality: 60
+        });
+
+        item.mime = "image/jpeg";
+        item.dataUrl = `data:image/jpeg;base64,${buffer.toString("base64")}`;
+        item.screenshotOk = true;
+      } catch (e) {
+        item.screenshotOk = false;
+        item.screenshotError = String(e?.message || e);
+      } finally {
+        await page.close().catch(() => {});
+      }
+    }
+
     return res.json({
       domain: domain.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
       meta: {
         sitemapUrl: usedSitemapUrl,
         totalUrlsDiscovered: urls.length,
-        groupedPatternsCount
+        groupedPatternsCount,
+        capturedCount: capturedPages.length
       },
       capturedPages,
       structureSummary,
@@ -168,6 +206,8 @@ app.post("/api/scan/domain", async (req, res) => {
       error: "domain scan failed",
       details: String(err?.message || err)
     });
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 });
 
