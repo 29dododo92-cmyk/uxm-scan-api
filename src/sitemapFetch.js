@@ -1,4 +1,4 @@
-export async function fetchTextWithTimeout(url, timeoutMs = 15000) {
+async function fetchTextWithTimeout(url, timeoutMs = 15000) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -7,6 +7,7 @@ export async function fetchTextWithTimeout(url, timeoutMs = 15000) {
       signal: controller.signal,
       headers: { "User-Agent": "ux-minder-bot/0.1" }
     });
+
     if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
     return await res.text();
   } finally {
@@ -14,8 +15,18 @@ export async function fetchTextWithTimeout(url, timeoutMs = 15000) {
   }
 }
 
+function buildSitemapCandidates(domain) {
+  const clean = String(domain)
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+
+  return [
+    `https://${clean}/sitemap.xml`,
+    `http://${clean}/sitemap.xml`
+  ];
+}
+
 module.exports = {
   fetchTextWithTimeout,
   buildSitemapCandidates
 };
-}
