@@ -5,6 +5,8 @@ const { chromium } = require("playwright");
 const { fetchTextWithTimeout, buildSitemapCandidates } = require("./src/sitemapFetch.js");
 const { parseSitemapXml } = require("./src/sitemapParse.js");
 const { buildFullStructure } = require("./src/structureBuild.js");
+const { buildCapturedPagesFromFullStructure } = require("./src/capturedBuild.js");
+
 
 const app = express();
 app.use(cors());
