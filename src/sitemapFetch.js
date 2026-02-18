@@ -14,13 +14,8 @@ export async function fetchTextWithTimeout(url, timeoutMs = 15000) {
   }
 }
 
-export function buildSitemapCandidates(domain) {
-  const clean = domain
-    .replace(/^https?:\/\//, "")
-    .replace(/\/+$/, "");
-
-  return [
-    `https://${clean}/sitemap.xml`,
-    `http://${clean}/sitemap.xml`
-  ];
+module.exports = {
+  fetchTextWithTimeout,
+  buildSitemapCandidates
+};
 }
