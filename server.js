@@ -7,7 +7,6 @@ const { parseSitemapXml } = require("./src/sitemapParse.js");
 const { buildFullStructure } = require("./src/structureBuild.js");
 const { buildCapturedPagesFromFullStructure } = require("./src/capturedBuild.js");
 
-
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -17,7 +16,6 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 /* =========================================
    EXISTING: Single page screenshot scan
 ========================================= */
-
 app.post("/scan", async (req, res) => {
   const { url } = req.body || {};
 
@@ -62,12 +60,14 @@ app.post("/scan", async (req, res) => {
 });
 
 /* =========================================
-   NEW: Domain → Sitemap → Full Structure
+   NEW: Domain → Sitemap → Structure + Captured list
+   - default returns structureSummary (small)
+   - fullStructure only if ?full=1
 ========================================= */
-
 app.post("/api/scan/domain", async (req, res) => {
   try {
     const { domain } = req.body || {};
+    const includeFull = req.query.full === "1";
 
     if (!domain || typeof domain !== "string") {
       return res.status(400).json({ error: "domain is required" });
@@ -84,7 +84,7 @@ app.post("/api/scan/domain", async (req, res) => {
         usedSitemapUrl = url;
         break;
       } catch (e) {
-        // пробуємо наступний варіант
+        // try next candidate
       }
     }
 
@@ -117,38 +117,52 @@ app.post("/api/scan/domain", async (req, res) => {
             if (urls.length >= MAX_URLS) break;
           }
         } catch (e) {
-          // пропускаємо биті sitemap
+          // ignore broken child sitemap
         }
       }
     }
 
-    // прибираємо дублікати
     urls = Array.from(new Set(urls)).slice(0, MAX_URLS);
 
     const fullStructure = buildFullStructure(urls);
-     const capturedPages = buildCapturedPagesFromFullStructure(fullStructure, {
-  maxBuckets: 4,
-  maxPatternsPerBucket: 5
-});
 
+    const groupedPatternsCount = (fullStructure.children || []).reduce(
+      (sum, bucket) => sum + (bucket.children?.length || 0),
+      0
+    );
 
-    const groupedPatternsCount =
-      fullStructure.children.reduce(
-        (sum, bucket) => sum + (bucket.children?.length || 0),
-        0
-      );
+    // small structure for UI
+    const structureSummary = {
+      label: fullStructure.label,
+      children: (fullStructure.children || []).slice(0, 12).map((bucket) => ({
+        label: bucket.label,
+        count: bucket.count,
+        children: (bucket.children || []).slice(0, 12).map((p) => ({
+          label: p.label,
+          count: p.count,
+          pattern: p.pattern,
+          exampleUrl: p.exampleUrl
+        }))
+      }))
+    };
+
+    // 1 screenshot per pattern (using exampleUrl)
+    const capturedPages = buildCapturedPagesFromFullStructure(fullStructure, {
+      maxBuckets: 4,
+      maxPatternsPerBucket: 5
+    });
 
     return res.json({
-  domain: domain.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
-  meta: {
-    sitemapUrl: usedSitemapUrl,
-    totalUrlsDiscovered: urls.length,
-    groupedPatternsCount
-  },
-  capturedPages,
-  fullStructure
-});
-
+      domain: domain.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
+      meta: {
+        sitemapUrl: usedSitemapUrl,
+        totalUrlsDiscovered: urls.length,
+        groupedPatternsCount
+      },
+      capturedPages,
+      structureSummary,
+      ...(includeFull ? { fullStructure } : {})
+    });
   } catch (err) {
     return res.status(500).json({
       error: "domain scan failed",
