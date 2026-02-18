@@ -126,6 +126,11 @@ app.post("/api/scan/domain", async (req, res) => {
     urls = Array.from(new Set(urls)).slice(0, MAX_URLS);
 
     const fullStructure = buildFullStructure(urls);
+     const capturedPages = buildCapturedPagesFromFullStructure(fullStructure, {
+  maxBuckets: 4,
+  maxPatternsPerBucket: 5
+});
+
 
     const groupedPatternsCount =
       fullStructure.children.reduce(
@@ -134,14 +139,16 @@ app.post("/api/scan/domain", async (req, res) => {
       );
 
     return res.json({
-      domain: domain.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
-      meta: {
-        sitemapUrl: usedSitemapUrl,
-        totalUrlsDiscovered: urls.length,
-        groupedPatternsCount
-      },
-      fullStructure
-    });
+  domain: domain.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
+  meta: {
+    sitemapUrl: usedSitemapUrl,
+    totalUrlsDiscovered: urls.length,
+    groupedPatternsCount
+  },
+  capturedPages,
+  fullStructure
+});
+
   } catch (err) {
     return res.status(500).json({
       error: "domain scan failed",
