@@ -2,11 +2,19 @@ const express = require("express");
 const cors = require("cors");
 const { chromium } = require("playwright");
 
+const { fetchTextWithTimeout, buildSitemapCandidates } = require("./src/sitemapFetch.js");
+const { parseSitemapXml } = require("./src/sitemapParse.js");
+const { buildFullStructure } = require("./src/structureBuild.js");
+
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "1mb" })); // URL в body — маленький
+app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (req, res) => res.json({ ok: true }));
+
+/* =========================================
+   EXISTING: Single page screenshot scan
+========================================= */
 
 app.post("/scan", async (req, res) => {
   const { url } = req.body || {};
@@ -26,10 +34,10 @@ app.post("/scan", async (req, res) => {
       viewport: { width: 1440, height: 900 }
     });
 
-    // важливо: нормалізуємо URL (щоб не падало на "example.com" без https)
-    const normalized = url.startsWith("http://") || url.startsWith("https://")
-      ? url
-      : `https://${url}`;
+    const normalized =
+      url.startsWith("http://") || url.startsWith("https://")
+        ? url
+        : `https://${url}`;
 
     await page.goto(normalized, { waitUntil: "networkidle", timeout: 45000 });
 
@@ -48,6 +56,95 @@ app.post("/scan", async (req, res) => {
     });
   } finally {
     if (browser) await browser.close().catch(() => {});
+  }
+});
+
+/* =========================================
+   NEW: Domain → Sitemap → Full Structure
+========================================= */
+
+app.post("/api/scan/domain", async (req, res) => {
+  try {
+    const { domain } = req.body || {};
+
+    if (!domain || typeof domain !== "string") {
+      return res.status(400).json({ error: "domain is required" });
+    }
+
+    const candidates = buildSitemapCandidates(domain);
+
+    let xmlText = null;
+    let usedSitemapUrl = null;
+
+    for (const url of candidates) {
+      try {
+        xmlText = await fetchTextWithTimeout(url, 15000);
+        usedSitemapUrl = url;
+        break;
+      } catch (e) {
+        // пробуємо наступний варіант
+      }
+    }
+
+    if (!xmlText) {
+      return res.status(404).json({
+        error: "sitemap.xml not found",
+        tried: candidates
+      });
+    }
+
+    const parsed = parseSitemapXml(xmlText);
+
+    const MAX_SITEMAPS = 20;
+    const MAX_URLS = 50000;
+
+    let urls = [];
+
+    if (parsed.type === "urlset") {
+      urls = parsed.urls;
+    } else {
+      const sitemaps = parsed.sitemaps.slice(0, MAX_SITEMAPS);
+
+      for (const sm of sitemaps) {
+        try {
+          const smXml = await fetchTextWithTimeout(sm, 15000);
+          const smParsed = parseSitemapXml(smXml);
+
+          if (smParsed.type === "urlset") {
+            urls.push(...smParsed.urls);
+            if (urls.length >= MAX_URLS) break;
+          }
+        } catch (e) {
+          // пропускаємо биті sitemap
+        }
+      }
+    }
+
+    // прибираємо дублікати
+    urls = Array.from(new Set(urls)).slice(0, MAX_URLS);
+
+    const fullStructure = buildFullStructure(urls);
+
+    const groupedPatternsCount =
+      fullStructure.children.reduce(
+        (sum, bucket) => sum + (bucket.children?.length || 0),
+        0
+      );
+
+    return res.json({
+      domain: domain.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
+      meta: {
+        sitemapUrl: usedSitemapUrl,
+        totalUrlsDiscovered: urls.length,
+        groupedPatternsCount
+      },
+      fullStructure
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: "domain scan failed",
+      details: String(err?.message || err)
+    });
   }
 });
 
